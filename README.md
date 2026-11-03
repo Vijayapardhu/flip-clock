@@ -5,7 +5,8 @@
 <h1>Flip Clock</h1>
 
 <p><strong>A minimal, hypnotic flip clock for focus and relaxation.</strong><br />
-Three flat cards, a crisp centre seam, and a real top-to-bottom flip — on the web, offline, and as a frameless Windows app.</p>
+Three flat cards, a crisp centre seam, and a real top-to-bottom flip.<br />
+On the web, offline, and as a frameless Windows app.</p>
 
 <p>
   <a href="https://vijayaapardhu.dev/flip-clock/"><img src="https://img.shields.io/badge/website-live-2ea44f?style=flat-square&logo=googlechrome&logoColor=white" alt="Live website" /></a>
