@@ -1,0 +1,101 @@
+'use strict';
+
+/**
+ * Renders the README screenshots in docs/ from the real site, with a clean
+ * profile and no OS window chrome.
+ *
+ *   node scripts/capture-docs.js   (through Electron: npx electron scripts/capture-docs.js)
+ */
+
+const path = require('node:path');
+const fs = require('node:fs');
+const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+
+const ROOT = path.join(__dirname, '..');
+const SITE = path.join(ROOT, 'website');
+const OUT = path.join(ROOT, 'docs');
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+let shotIndex = 0;
+
+async function capture({ name, width, height, shell = false, setup }) {
+  shotIndex += 1;
+  const win = new BrowserWindow({
+    width,
+    height,
+    useContentSize: true,
+    show: true,
+    frame: false,
+    backgroundColor: '#000000',
+    webPreferences: {
+      partition: `docs-shot-${Date.now()}-${shotIndex}`,
+      preload: shell ? path.join(ROOT, 'desktop', 'preload.js') : undefined,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+
+  const query = shell ? { shell: '1' } : {};
+  await win.loadFile(path.join(SITE, 'index.html'), { query });
+  await wait(1500);
+  if (setup) {
+    await win.webContents.executeJavaScript(setup);
+    await wait(800);
+  }
+  await wait(500);
+
+  const image = await win.webContents.capturePage();
+  fs.mkdirSync(OUT, { recursive: true });
+  fs.writeFileSync(path.join(OUT, name), image.toPNG());
+  process.stdout.write(`wrote docs/${name}\n`);
+  win.destroy();
+}
+
+app.on('window-all-closed', () => {
+  // Keep the process alive between captures.
+});
+
+app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null);
+  ipcMain.handle('shell:is-maximized', () => false);
+  try {
+    // Hero — the frameless desktop shell, default palette.
+    await capture({ name: 'desktop-dark.png', width: 1600, height: 900, shell: true });
+
+    // Phone portrait — warm light palette, three cards.
+    await capture({
+      name: 'mobile-warm.png',
+      width: 427,
+      height: 952,
+      setup: `FlipThemes.setMode('light'); FlipThemes.setTheme('theme4');`,
+    });
+
+    // Redesigned settings sheet.
+    await capture({
+      name: 'settings.png',
+      width: 1440,
+      height: 900,
+      shell: true,
+      setup: `document.getElementById('menuToggle').click();`,
+    });
+
+    // Theme variety — a calm dark palette and a bright light palette.
+    await capture({
+      name: 'theme-iris.png',
+      width: 1440,
+      height: 810,
+      setup: `FlipThemes.setMode('dark'); FlipThemes.setTheme('theme2');`,
+    });
+    await capture({
+      name: 'theme-rose.png',
+      width: 1440,
+      height: 810,
+      setup: `FlipThemes.setMode('light'); FlipThemes.setTheme('theme10');`,
+    });
+  } catch (error) {
+    console.error(error);
+  }
+  app.quit();
+});
