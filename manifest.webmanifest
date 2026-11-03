@@ -1,0 +1,44 @@
+{
+  "name": "Flip Clock — Minimal Flip Clock",
+  "short_name": "Flip Clock",
+  "description": "Aesthetic minimal flip clock for focus & relaxation. Beautiful themes, light & dark modes, flip animation and sound, timer and stopwatch. Works offline.",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "en",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": [
+    "utilities",
+    "productivity",
+    "lifestyle"
+  ],
+  "icons": [
+    {
+      "src": "assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "assets/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

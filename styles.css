@@ -1,0 +1,1693 @@
+/* ==========================================================================
+   Flip Clock — minimal aesthetic flip clock
+   Effects & transitions modelled on flipclock.app:
+   • flip-top flap folds down (500ms, accelerating), flip-bottom flap lands
+     with a small rebound (280ms, starting after the top flap at ~70%)
+   • light/dark switch reveals the new mode top-to-bottom via a static page
+     copy clipped with clip-path (see themes.js)
+   • every surface uses one easing family: cubic-bezier(.65, 0, .35, 1) and
+     cubic-bezier(.22, .9, .3, 1) for pops/entrances
+   Everything is self-hosted: no CDN, no network needed.
+   ========================================================================== */
+
+/* ---------- Fonts (self-hosted, subsets) ---------- */
+@font-face {
+  font-family: 'Bebas Neue';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('assets/fonts/bebas-neue-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Bebas Neue';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('assets/fonts/bebas-neue-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ---------- Variables ---------- */
+:root {
+  --background: #000000;
+  --holder: #101010;
+  --text: #b7b7b7;
+  --text-muted: #6f6f6f;
+
+  --theme-secondary: #ffffff;
+  --accent: #00e676;
+
+  /* card depth: flat faces — the panel itself carries the depth */
+  --card-edge: rgba(255, 255, 255, 0.09);
+  --card-outline: rgba(255, 255, 255, 0.045);
+  --seam: rgba(0, 0, 0, 0.8);
+  --seam-highlight: rgba(255, 255, 255, 0.055);
+
+  /* ui surfaces */
+  --slider-bg: #353535;
+  --control-bg: rgba(16, 16, 16, 0.72);
+  --control-border: rgba(255, 255, 255, 0.09);
+  --swatch-border: rgba(255, 255, 255, 0.14);
+  --hover-bg: rgba(255, 255, 255, 0.08);
+
+  --line-height: 0.7vh;
+
+  /* flip timing */
+  --flip-top-dur: 500ms;
+  --flip-bottom-dur: 280ms;
+  --flip-sound-offset: -25ms;
+
+  --ease-out: cubic-bezier(0.22, 0.9, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* digit size: panels are derived from height (aspect 3/4), so vh binds most screens;
+     vw keeps ultra-wide rows inside the viewport */
+  --clock-digit-size: clamp(3.5rem, min(25vw, 38vh), 26rem);
+
+  --gap: 1.5vw;
+}
+
+[data-theme='light'] {
+  --background: #f3f3f3;
+  --holder: #e2e2e2;
+  --text: #000000;
+  --text-muted: #828282;
+
+  --theme-secondary: #50494f;
+
+  --card-edge: rgba(255, 255, 255, 0.9);
+  --card-outline: rgba(0, 0, 0, 0.075);
+  --seam: rgba(0, 0, 0, 0.22);
+  --seam-highlight: rgba(255, 255, 255, 0.9);
+
+  --slider-bg: #bcbcbc;
+  --control-bg: rgba(243, 243, 243, 0.78);
+  --control-border: rgba(0, 0, 0, 0.09);
+  --swatch-border: rgba(0, 0, 0, 0.16);
+  --hover-bg: rgba(0, 0, 0, 0.07);
+}
+
+/* Honor system preference on first launch (JS also respects a saved choice) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']):not([data-theme='light']) {
+    --background: #f3f3f3;
+  }
+}
+
+/* ---------- Base ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background-color: var(--background);
+  transition: background-color 0.45s var(--ease-in-out);
+}
+
+body {
+  font-family: 'Bebas Neue', 'Arial Narrow', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.hide {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Desktop shell — custom titlebar ribbon (frameless Electron window, ?shell=1)
+   The ribbon inherits the active theme palette, so every theme matches.
+   ========================================================================== */
+.shell-ribbon {
+  display: none;
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 60;
+  height: 38px;
+  align-items: center;
+  padding: 0 6px 0 18px;
+  background: color-mix(in srgb, var(--holder) 18%, var(--background));
+  border-bottom: 1px solid var(--control-border);
+  color: var(--text);
+  -webkit-app-region: drag;
+  user-select: none;
+  transition:
+    background-color 0.45s var(--ease-in-out),
+    border-color 0.45s var(--ease-in-out);
+}
+
+html.shell .shell-ribbon {
+  display: flex;
+}
+
+.shell-brand {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  white-space: nowrap;
+  opacity: 0.38;
+}
+
+.shell-spacer {
+  flex: 1;
+  align-self: stretch;
+}
+
+.shell-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.shell-win-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  opacity: 0.55;
+  cursor: default;
+  transition: background 0.14s ease, opacity 0.14s ease, color 0.14s ease;
+}
+
+.shell-win-btn:hover {
+  background: var(--hover-bg);
+  opacity: 1;
+}
+
+.shell-win-btn:active {
+  transform: translateY(1px);
+}
+
+.shell-win-btn--close:hover {
+  background: #e81123;
+  color: #ffffff;
+  opacity: 1;
+}
+
+.shell-win-btn .ico-restore {
+  display: none;
+}
+
+html.is-maximized .shell-win-btn .ico-max {
+  display: none;
+}
+
+html.is-maximized .shell-win-btn .ico-restore {
+  display: block;
+}
+
+/* Make room for the ribbon in the desktop shell */
+html.shell .date-line {
+  top: calc(38px + 16px);
+}
+
+/* Full screen: hand the whole screen back to the clock */
+html.shell:fullscreen .shell-ribbon {
+  display: none;
+}
+
+html.shell:fullscreen .date-line {
+  top: 16px;
+}
+
+
+:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ---------- The horizontal line behind the clock ---------- */
+.line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 2;
+  width: 100%;
+  height: var(--line-height);
+  background-color: var(--holder);
+  pointer-events: none;
+}
+
+/* ---------- Layout ---------- */
+.container {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap);
+  padding: 0 1.5vw;
+  position: relative;
+  z-index: 1;
+  transform: scale(var(--clock-scale, 1));
+  transition: transform 0.35s var(--ease-out);
+  will-change: transform;
+}
+
+.holder {
+  position: relative;
+  z-index: 1;
+  overflow: hidden; /* keeps the swinging leaves inside the panel */
+  flex: 0 0 auto;
+  background-color: var(--holder);
+  border-radius: clamp(20px, 5vw, 80px);
+  box-shadow:
+    inset 0 1px 0 var(--card-edge),
+    0 0 0 1px var(--card-outline);
+  transition:
+    background-color 0.45s var(--ease-in-out),
+    border-radius 0.5s var(--ease-out);
+}
+
+/* Live region for screen readers */
+#liveTime {
+  position: absolute;
+}
+
+/* ---------- Flip choreography ---------- */
+.flip-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--clock-digit-size);
+  line-height: 1;
+  perspective: 4em;
+  height: 1.7em; /* two 50% halves — the card's height; width derives from aspect-ratio */
+  aspect-ratio: 3 / 4; /* tall, sleek 0.75:1 panels */
+  color: var(--text);
+  /* Dragging the window resizes the clock smoothly instead of snapping */
+  transition: font-size 0.5s var(--ease-out);
+}
+
+.flip_container {
+  padding: 0; /* halves tile the card edge-to-edge; the panel hugs the digits */
+}
+
+.container-segment,
+.segment {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* ---------- Split-flap anatomy ----------
+   Each half is a 100% x 50% window. Inside it lives `.glyph`, a box the size of
+   the ENTIRE card holding the full digit, centered. Both halves render the same
+   glyph in the same coordinate space, so the seam is a perfectly clean cut at
+   the card's mid-height — for any font, any font-size. */
+.top,
+.bottom,
+.flip-card .top-flip,
+.flip-card .bottom-flip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  overflow: hidden;
+  background-color: var(--holder);
+}
+
+.top,
+.flip-card .top-flip {
+  top: 0;
+  box-shadow: inset 0 -1px 0 var(--seam);
+}
+
+.bottom,
+.flip-card .bottom-flip {
+  bottom: 0;
+  box-shadow: inset 0 1px 0 var(--seam-highlight);
+}
+
+.glyph {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 200%; /* the full card */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.top .glyph,
+.flip-card .top-flip .glyph {
+  top: 0;
+}
+
+.bottom .glyph,
+.flip-card .bottom-flip .glyph {
+  top: -100%; /* shift the same full glyph down — only its lower half is visible */
+}
+
+.flip-card .top-flip,
+.flip-card .bottom-flip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: auto;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition: none;
+  will-change: transform;
+  background-color: var(--holder);
+}
+
+/* Top leaf: accelerates from rest toward the seam */
+.flip-card .top-flip {
+  top: 0;
+  transform-origin: bottom;
+  animation: flip-top var(--flip-top-dur) cubic-bezier(0.5, 0, 0.85, 0.4) forwards;
+  z-index: 2;
+  box-shadow: inset 0 -1px 0 var(--seam);
+}
+
+/* Bottom leaf: keeps falling, lands at 70%, rebounds ~5° and settles */
+.flip-card .bottom-flip {
+  bottom: 0;
+  transform-origin: top;
+  transform: rotateX(90deg);
+  animation: flip-bottom var(--flip-bottom-dur) linear var(--flip-top-dur) forwards;
+  z-index: 2;
+  box-shadow: inset 0 1px 0 var(--seam-highlight);
+}
+
+@keyframes flip-top {
+  100% {
+    transform: rotateX(-90deg);
+  }
+}
+
+@keyframes flip-bottom {
+  0% {
+    transform: rotateX(90deg);
+    animation-timing-function: cubic-bezier(0.45, 0.2, 0.85, 0.6);
+  }
+
+  70% {
+    transform: rotateX(0deg);
+    animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1);
+  }
+
+  85% {
+    transform: rotateX(5deg);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.5, 1);
+  }
+
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+/* ---------- Seconds holder: animated open/collapse ---------- */
+#secondHolder {
+  max-width: 0;
+  min-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-10%) scale(0.85);
+  transform-origin: left;
+  margin-left: calc(-1 * var(--gap));
+  pointer-events: none;
+  transition:
+    max-width 0.42s var(--ease-out),
+    margin-left 0.42s var(--ease-out),
+    opacity 0.28s ease,
+    transform 0.42s var(--ease-out),
+    visibility 0s linear 0.42s;
+}
+
+.container.show-seconds #secondHolder {
+  max-width: 60vw; /* cap far above natural size — only constrains during the collapse animation */
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0) scale(1);
+  margin-left: 0;
+  pointer-events: auto;
+  transition:
+    max-width 0.42s var(--ease-out),
+    margin-left 0.42s var(--ease-out),
+    opacity 0.32s ease 0.06s,
+    transform 0.42s var(--ease-out),
+    visibility 0s;
+}
+
+/* ---------- AM/PM ---------- */
+.ampm {
+  position: absolute;
+  bottom: clamp(1rem, 3.4vh, 2rem);
+  left: clamp(1.1rem, 3vw, 2.2rem);
+  margin: 0;
+  font-size: clamp(1.15rem, 4.4vh, 2.4rem);
+  letter-spacing: 0.18em;
+  font-weight: 400;
+  color: var(--text);
+  opacity: 0.75;
+  z-index: 3;
+  transition:
+    opacity 0.3s ease,
+    font-size 0.5s var(--ease-out),
+    bottom 0.5s var(--ease-out),
+    left 0.5s var(--ease-out);
+}
+
+.container[data-mode='timer'] .ampm,
+.container[data-mode='stopwatch'] .ampm,
+.container[data-mode='clock'].use-24h .ampm {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* ---------- Hours holder in timer/stopwatch modes (MM:SS — no hours) ---------- */
+.container[data-mode='timer'] .holder#hourHolder,
+.container[data-mode='stopwatch'] .holder#hourHolder {
+  display: none;
+}
+
+/* ==========================================================================
+   Bottom menu bar
+   ========================================================================== */
+.menu {
+  z-index: 3;
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 6px;
+  cursor: pointer;
+  color: var(--text);
+  opacity: 0.3;
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out);
+  border-radius: 8px;
+}
+
+.icon-btn:hover {
+  opacity: 1;
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.icon-btn[aria-pressed='true'] {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.icon-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--text);
+}
+
+/* ==========================================================================
+   Settings panel (#controls) — sectioned sheet with header, scroll area, footer
+   ========================================================================== */
+#controls {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 72px;
+  display: flex;
+  flex-direction: column;
+  width: min(92vw, 400px);
+  max-height: min(88vh, 640px);
+  padding: 0;
+  overflow: hidden;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  border-radius: 18px;
+  backdrop-filter: blur(30px) saturate(1.15);
+  -webkit-backdrop-filter: blur(30px) saturate(1.15);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.25);
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+  transform-origin: bottom center;
+  transition:
+    opacity 0.3s var(--ease-out),
+    transform 0.34s var(--ease-out),
+    display 0.34s allow-discrete;
+}
+
+#controls.close {
+  display: none;
+  opacity: 0;
+  transform: translateX(-50%) translateY(16px) scale(0.95);
+}
+
+@starting-style {
+  #controls:not(.close) {
+    opacity: 0;
+    transform: translateX(-50%) translateY(16px) scale(0.95);
+  }
+}
+
+/* ---------- Header ---------- */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  padding: 12px 12px 12px 20px;
+  border-bottom: 1px solid var(--control-border);
+}
+
+.panel-title {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  color: var(--text);
+  opacity: 0.55;
+}
+
+.panel-close {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.panel-close:hover {
+  opacity: 1;
+  background: var(--hover-bg);
+}
+
+/* ---------- Scrollable body ---------- */
+.panel-scroll {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--slider-bg) transparent;
+}
+
+.panel-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel-scroll::-webkit-scrollbar-thumb {
+  background: var(--slider-bg);
+  border-radius: 999px;
+}
+
+.panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- Section titles ---------- */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 2px 7px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.4;
+}
+
+.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--control-border);
+}
+
+.section-title:first-child {
+  margin-top: 0;
+}
+
+/* Timer panel's own title stretches with the row layout */
+.timer-controls .section-title {
+  align-self: stretch;
+}
+
+.panel-scroll > .section-title:first-of-type {
+  margin-top: 2px;
+}
+
+/* ---------- Option rows: icon + label + control ---------- */
+.pref-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.pref-row:hover {
+  background: var(--hover-bg);
+}
+
+.pref-row--static {
+  cursor: default;
+}
+
+.pref-row--static:hover {
+  background: transparent;
+}
+
+.pref-row--disabled {
+  opacity: 0.38;
+}
+
+.pref-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: var(--text);
+  opacity: 0.72;
+  transition: opacity 0.16s ease;
+}
+
+.pref-row:hover .pref-icon {
+  opacity: 1;
+}
+
+.pref-label {
+  flex: 1;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.82rem;
+  color: var(--text);
+  opacity: 0.92;
+}
+
+.pref-row .switch {
+  --size: 0.95rem;
+  flex: 0 0 auto;
+}
+
+/* ---------- Clock size row ---------- */
+.size-row input[type='range'] {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.size-value {
+  flex: 0 0 auto;
+  min-width: 44px;
+  text-align: right;
+  font-family: 'Bebas Neue', Arial, sans-serif;
+  font-size: 0.88rem;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  opacity: 0.8;
+}
+
+/* ---------- Segmented 12 / 24 control ---------- */
+.segmented {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--slider-bg);
+  border-radius: 10px;
+}
+
+.segmented button {
+  min-width: 46px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: background 0.16s ease, opacity 0.16s ease, box-shadow 0.16s ease;
+}
+
+.segmented button:hover {
+  opacity: 0.9;
+}
+
+.segmented button.is-active {
+  background: var(--holder);
+  opacity: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- Footer ---------- */
+.panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 10px 12px 10px 18px;
+  border-top: 1px solid var(--control-border);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.footer-hint {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.64rem;
+  color: var(--text);
+  opacity: 0.42;
+}
+
+.footer-hint kbd {
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--hover-bg);
+  border: 1px solid var(--control-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+
+.footer-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.footer-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease, transform 0.15s var(--ease-out);
+}
+
+.footer-btn:hover {
+  opacity: 1;
+  background: var(--hover-bg);
+  transform: translateY(-1px);
+}
+
+.footer-btn:active {
+  transform: scale(0.92);
+}
+
+/* ---------- Range slider ---------- */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  width: 100%;
+  background: var(--slider-bg);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  background: var(--text);
+  border: none;
+  border-radius: 25%;
+  box-shadow: 0 0 10px -1px rgba(0, 0, 0, 0.6);
+  transition: transform 0.15s var(--ease-out);
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  background: var(--text);
+  border: none;
+  border-radius: 25%;
+}
+
+/* Non-clock modes: seconds always on, 12/24 format meaningless — rows lock and dim */
+body[data-mode='timer'] .pref-row:has(#secondsToggle),
+body[data-mode='stopwatch'] .pref-row:has(#secondsToggle),
+body[data-mode='timer'] .pref-row:has(#formatToggle),
+body[data-mode='stopwatch'] .pref-row:has(#formatToggle) {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.switch {
+  --size: 1.05rem;
+  -webkit-appearance: none;
+  appearance: none;
+  width: calc(var(--size) * 2);
+  height: var(--size);
+  display: inline-block;
+  border-radius: 0.35rem;
+  border: none;
+  cursor: pointer;
+  background-color: var(--slider-bg);
+  background-image: radial-gradient(circle calc(var(--size) / 2.15), var(--text) 70%, transparent 0),
+    radial-gradient(circle calc(var(--size) / 1.5), rgba(0, 0, 0, 0.35) 0%, transparent 100%);
+  background-repeat: no-repeat;
+  background-position: calc(var(--size) / -2.2) 0;
+  transition: background 0.2s ease-out;
+  outline-offset: 3px;
+}
+
+.switch:checked {
+  background-position: calc(var(--size) / 2) 0;
+}
+
+/* ---------- Theme swatches ---------- */
+.themes_container {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 12px 8px;
+  justify-items: center;
+  padding: 2px 4px 4px;
+}
+
+.theme-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--swatch-border);
+  background: linear-gradient(135deg, var(--sw-a) 0 50%, var(--sw-b) 50% 100%);
+  cursor: pointer;
+  transition: transform 0.35s var(--ease-out), box-shadow 0.35s var(--ease-out);
+  position: relative;
+}
+
+.theme-swatch:hover {
+  transform: rotate(180deg) scale(1.15);
+  box-shadow: 0 0 0 4px var(--hover-bg);
+}
+
+.theme-swatch.is-active {
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--text);
+  transform: scale(1.18);
+}
+
+/* Custom theme swatch — a rainbow donut signifying "your color" */
+.theme-swatch--custom {
+  background: conic-gradient(#ff7676, #ffd166, #06d6a0, #4cc9f0, #b388ff, #ff7676);
+  border-radius: 50%;
+}
+
+.theme-swatch--custom::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--background);
+}
+
+.theme-swatch--custom {
+  box-shadow: inset 0 0 0 1px var(--swatch-border);
+}
+
+.theme-swatch--custom.is-active::after {
+  background: transparent;
+}
+
+/* ---------- Custom theme builder ---------- */
+.custom-theme-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 2px 0;
+}
+
+.custom-theme-label {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.45;
+  flex: 1;
+}
+
+.color-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.color-field-caption {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  opacity: 0.5;
+}
+
+.color-field input[type='color'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 38px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--control-border);
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out), border-color 0.15s ease;
+}
+
+.color-field input[type='color']:hover {
+  transform: scale(1.12);
+  border-color: var(--text);
+}
+
+.color-field input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.color-field input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 5px;
+}
+
+.color-field input[type='color']::-moz-color-swatch {
+  border: none;
+  border-radius: 5px;
+}
+
+/* ==========================================================================
+   Timer / stopwatch — run controls inside the settings panel
+   ========================================================================== */
+.timer-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 0 2px;
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  transition: opacity 0.28s var(--ease-out), transform 0.3s var(--ease-out), display 0.3s allow-discrete;
+}
+
+.timer-controls.hide {
+  display: none !important;
+  opacity: 0;
+  transform: scale(0.95) translateY(8px);
+}
+
+.transport-row {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+
+.transport-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.15s ease, transform 0.15s var(--ease-out), background 0.15s ease;
+}
+
+.transport-icon:hover {
+  opacity: 1;
+  background: var(--hover-bg);
+  transform: scale(1.06);
+}
+
+.transport-icon:active {
+  transform: scale(0.94);
+}
+
+/* Minute slider with clickable 01 / 15 / 30 / 45 / 60 marks */
+.time-slider-row {
+  width: 100%;
+  position: relative;
+  padding-top: 12px;
+}
+
+.time-slider-row input[type='range'] {
+  width: 100%;
+  height: 7px;
+}
+
+.slider-marks {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 12px;
+}
+
+.slider-marks span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.25s ease, font-weight 0.25s ease;
+}
+
+.slider-marks span:hover {
+  color: var(--text);
+}
+
+.slider-marks span.active {
+  color: var(--text);
+  font-weight: bold;
+}
+
+.slider-marks span[data-value='1'] {
+  left: 0%;
+  transform: translateX(0);
+}
+
+.slider-marks span[data-value='15'] {
+  left: 25%;
+}
+
+.slider-marks span[data-value='30'] {
+  left: 50%;
+}
+
+.slider-marks span[data-value='45'] {
+  left: 75%;
+}
+
+.slider-marks span[data-value='60'] {
+  left: 100%;
+  transform: translateX(-100%);
+}
+
+/* ==========================================================================
+   Lo-fi player
+   ========================================================================== */
+#lofi_container {
+  position: fixed;
+  z-index: 6;
+  bottom: 20px;
+  right: 20px;
+  width: max-content;
+  padding: 12px;
+  border-radius: 1.4rem;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  box-shadow: 0 0 50px 10px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: grab;
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  transition: opacity 0.3s var(--ease-out), transform 0.35s var(--ease-out), display 0.35s allow-discrete;
+}
+
+#lofi_container.hide {
+  display: none !important;
+  opacity: 0;
+  transform: scale(0.93) translateY(18px);
+}
+
+@starting-style {
+  #lofi_container:not(.hide) {
+    opacity: 0;
+    transform: scale(0.93) translateY(20px);
+  }
+}
+
+.lofi-panel {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.lofi-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 4px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  fill: var(--text);
+  color: var(--text);
+  opacity: 0.5;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.lofi-close:hover {
+  opacity: 1;
+  background: var(--hover-bg);
+}
+
+#lofi_player {
+  border-radius: 1rem;
+  background: #000;
+}
+
+.lofi-name {
+  margin: 0 0 2px 8px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.68rem;
+  color: var(--text);
+  opacity: 0.35;
+}
+
+/* ---------- Glanceable date (top-left) ---------- */
+.date-line {
+  position: absolute;
+  top: 16px;
+  left: 22px;
+  z-index: 2;
+  margin: 0;
+  font-size: clamp(0.85rem, 2.4vh, 1.3rem);
+  letter-spacing: 0.26em;
+  color: var(--text);
+  opacity: 0.32;
+  transition: opacity 0.45s ease;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ---------- Pomodoro chips + focus stats (timer panel) ---------- */
+.pomo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pomo-chip {
+  padding: 6px 14px;
+  font-family: 'Bebas Neue', Arial, sans-serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: all 0.16s ease;
+}
+
+.pomo-chip:hover {
+  opacity: 1;
+  border-color: var(--text);
+  transform: translateY(-1px);
+}
+
+.focus-stats {
+  margin: 0 0 0 auto;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.68rem;
+  color: var(--text);
+  opacity: 0.45;
+  white-space: nowrap;
+}
+
+/* ---------- Auto-hide UI (screensaver mode) ---------- */
+body.ui-hidden .menu,
+body.ui-hidden .date-line,
+body.ui-hidden #controls,
+body.ui-hidden .lofi-panel,
+body.ui-hidden #lofi_container {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.menu,
+.date-line {
+  transition: opacity 0.45s ease;
+}
+
+/* ==========================================================================
+   Keyboard shortcuts modal
+   ========================================================================== */
+.shortcuts-modal {
+  z-index: 2147483000; /* below the theme-swipe sheet, above everything else */
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: modal-in 0.28s var(--ease-out);
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.shortcuts-card {
+  width: min(420px, 100%);
+  padding: 22px 26px 20px;
+  border-radius: 18px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  animation: card-in 0.34s var(--ease-out);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.shortcuts-card h2 {
+  margin: 0 0 14px;
+  font-size: 1.45rem;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--text);
+}
+
+.shortcuts-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.shortcuts-list li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.82rem;
+  color: var(--text);
+  opacity: 0.85;
+}
+
+kbd {
+  flex: 0 0 auto;
+  min-width: 34px;
+  text-align: center;
+  padding: 4px 8px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--hover-bg);
+  border: 1px solid var(--control-border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+}
+
+.shortcuts-close {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #04150c;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s var(--ease-out);
+}
+
+.shortcuts-close:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   Update toast
+   ========================================================================== */
+.toast {
+  z-index: 7;
+  position: fixed;
+  bottom: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.82rem;
+  color: var(--text);
+  animation: toast-in 0.35s var(--ease-out);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+#reloadBtn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #04150c;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out);
+}
+
+#reloadBtn:hover {
+  transform: scale(1.05);
+}
+
+/* ==========================================================================
+   Light/dark swipe sheet (see themes.js) — a still of the old theme that
+   is wiped away top-to-bottom
+   ========================================================================== */
+.mode-swipe-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: var(--background);
+}
+
+.mode-swipe-instant,
+.mode-swipe-instant *,
+.mode-swipe-instant *::before,
+.mode-swipe-instant *::after {
+  transition: none !important;
+}
+
+.mode-swipe-sheet *,
+.mode-swipe-sheet *::before,
+.mode-swipe-sheet *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+@media (orientation: portrait) {
+  :root {
+    /* Portrait follows the reference mobile UI: cards are landscape, half the
+       viewport wide, and nearly as tall as the digits they hold (1.12em).
+       40vw gives three cards + gaps that fill the height; 22vh keeps them
+       inside short windows. */
+    --clock-digit-size: clamp(3.2rem, min(40vw, 22vh), 12rem);
+    --gap: clamp(12px, 1.7vh, 18px);
+  }
+
+  .container {
+    flex-direction: column;
+    gap: var(--gap);
+    padding: 0;
+  }
+
+  .flip-card {
+    height: 1.12em; /* reference mobile card: 213.5 x 191.3 @ 427px */
+    aspect-ratio: 50 / 44.8;
+  }
+
+  .line {
+    width: var(--line-height);
+    height: 100%;
+    left: 50%;
+    top: 0;
+  }
+
+  /* Seconds: collapse vertically instead of horizontally */
+  #secondHolder {
+    max-width: none;
+    max-height: 0;
+    min-width: 0;
+    margin-left: 0;
+    margin-top: calc(-1 * var(--gap));
+    transform: translateY(-14%) scale(0.86);
+    transform-origin: center top;
+    transition:
+      max-height 0.42s var(--ease-out),
+      margin-top 0.42s var(--ease-out),
+      opacity 0.28s ease,
+      transform 0.42s var(--ease-out),
+      visibility 0s linear 0.42s;
+  }
+
+  .container.show-seconds #secondHolder {
+    max-width: none;
+    max-height: 60vh;
+    transform: translateY(0) scale(1);
+    margin-top: 0;
+    transition:
+      max-height 0.42s var(--ease-out),
+      margin-top 0.42s var(--ease-out),
+      opacity 0.32s ease 0.06s,
+      transform 0.42s var(--ease-out),
+      visibility 0s;
+  }
+}
+
+@media (max-height: 480px) {
+  :root {
+    --clock-digit-size: clamp(2rem, min(34vh, 20vw), 9rem);
+  }
+
+  .menu {
+    bottom: 6px;
+    gap: 12px;
+  }
+
+  #controls {
+    bottom: 52px;
+    max-height: min(92vh, 480px);
+  }
+
+  .panel-header {
+    padding: 8px 10px 8px 16px;
+  }
+
+  .panel-scroll {
+    padding: 10px 12px;
+  }
+
+  .pref-row {
+    padding: 6px 8px;
+  }
+
+  .themes_container {
+    gap: 8px 6px;
+  }
+
+  .ampm {
+    bottom: 0.25em;
+  }
+}
+
+@media (max-width: 560px) {
+  #lofi_container {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
+   Reduced motion
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --flip-top-dur: 120ms;
+    --flip-bottom-dur: 120ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.15s !important;
+  }
+
+  .flip-card .top-flip,
+  .flip-card .bottom-flip {
+    animation: none;
+    transform: none;
+  }
+
+  .flip-card .top-flip {
+    opacity: 0;
+  }
+
+  .flip-card .bottom-flip {
+    opacity: 0;
+  }
+}
+
+/* ==========================================================================
+   Light/dark toggle — shows the mode you'll switch TO (sun in dark mode,
+   moon in light mode). The real checkbox is visually hidden but keyboard
+   focusable; focus rings land on the visible icon.
+   ========================================================================== */
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.mode-toggle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none; /* the label handles pointer activation */
+}
+
+.mode-icon {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--text);
+  opacity: 0.3;
+  transition: opacity 0.18s ease, transform 0.3s var(--ease-out);
+}
+
+.mode-toggle:checked ~ .mode-icon--sun,
+.mode-toggle:not(:checked) ~ .mode-icon--moon {
+  display: inline-flex;
+}
+
+.theme-switch:hover .mode-icon {
+  opacity: 1;
+  transform: rotate(180deg) scale(1.18);
+}
+
+.mode-toggle:focus-visible ~ .mode-icon {
+  opacity: 1;
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
