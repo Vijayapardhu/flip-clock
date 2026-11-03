@@ -1,0 +1,133 @@
+name: Release
+
+# Builds the Windows app and publishes it to GitHub Releases whenever a
+# version tag is pushed, then deploys the landing page.
+#
+#   git commit -am "v1.1.0"
+#   git tag v1.1.0
+#   git push origin main v1.1.0
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish (e.g. v1.0.0)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build & publish
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve tag and verify it matches package.json
+        id: meta
+        shell: pwsh
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          $version = [string]$pkg.version
+          $tag = "${{ inputs.tag }}"
+          if ([string]::IsNullOrWhiteSpace($tag)) { $tag = "${{ github.ref_name }}" }
+          if ($tag -ne "v$version") {
+            throw "Tag '$tag' does not match package.json version 'v$version'. Bump the version, commit, then tag."
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Publishing $tag"
+
+      - name: Generate application icon
+        run: npm run icon:app
+
+      - name: Build and publish to GitHub Releases
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release notes from commit history
+        shell: pwsh
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          $tag = $env:TAG
+          $prev = git describe --tags --abbrev=0 "$tag^" 2>$null
+          if ([string]::IsNullOrWhiteSpace($prev)) {
+            $prev = git rev-list --max-parents=0 HEAD | Select-Object -First 1
+          }
+          $log = git log "$prev..$tag" --pretty=format:"- %s (%h)" --no-merges
+          $body = @"
+          ## FlipClock $tag
+
+          ### What changed
+          $log
+
+          ### Install
+          | File | Notes |
+          | --- | --- |
+          | \`FlipClock-Setup-$($tag.TrimStart('v')).exe\` | Installer with Start menu + desktop shortcuts. |
+          | \`FlipClock-$($tag.TrimStart('v'))-portable.exe\` | Runs from anywhere, no install. |
+
+          > Builds are unsigned. SmartScreen may ask you to confirm —
+          > choose **More info → Run anyway**, or build from source.
+          "@
+          Set-Content -Path release_notes.md -Value $body -Encoding utf8
+
+      - name: Attach release notes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: gh release edit $env:TAG --notes-file release_notes.md
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: flip-clock-${{ steps.meta.outputs.tag }}
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
+          if-no-files-found: warn
+
+  pages:
+    name: Deploy landing page
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish website/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./website
+          publish_branch: gh-pages
+          force_orphan: true

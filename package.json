@@ -1,0 +1,94 @@
+{
+  "name": "flip-clock",
+  "productName": "Flip Clock",
+  "version": "1.4.0",
+  "description": "A minimal, hypnotic flip clock for focus and relaxation — website, offline PWA and a frameless desktop app.",
+  "author": "Vijayapardhu",
+  "license": "MIT",
+  "private": true,
+  "main": "desktop/main.js",
+  "homepage": "https://vijayapardhu.github.io/flip-clock/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vijayapardhu/flip-clock.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Vijayapardhu/flip-clock/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "electron .",
+    "start:classic": "electron src/main.js",
+    "start:fullscreen": "electron src/main.js --fullscreen",
+    "serve": "npx --yes serve website",
+    "smoke": "electron scripts/smoke.js",
+    "smoke:website": "electron scripts/smoke-website.js",
+    "check:responsive": "electron scripts/check-responsive.js",
+    "icon": "node scripts/make-icon.js",
+    "icon:app": "node scripts/make-app-icon.js",
+    "icons": "node scripts/make-pwa-icons.js && node scripts/make-app-icon.js",
+    "og": "node scripts/make-og.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win",
+    "dist:setup": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable",
+    "release": "electron-builder --win --publish always"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
+    "electron-updater": "^6.8.11"
+  },
+  "build": {
+    "appId": "com.flipclock.desktop",
+    "productName": "Flip Clock",
+    "copyright": "Copyright © 2026 Vijayapardhu",
+    "compression": "maximum",
+    "asar": true,
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "desktop/**/*",
+      "website/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "FlipClock-${version}-${arch}.${ext}",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Flip Clock",
+      "artifactName": "FlipClock-Setup-${version}.${ext}",
+      "differentialPackage": true
+    },
+    "portable": {
+      "artifactName": "FlipClock-${version}-portable.${ext}",
+      "unpackDirName": "FlipClock"
+    },
+    "publish": {
+      "provider": "github",
+      "releaseType": "release"
+    }
+  }
+}

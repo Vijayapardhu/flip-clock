@@ -1,0 +1,765 @@
+/* ==========================================================================
+   FlipClock — matte-black, frameless retro flip clock.
+
+   Geometry comes from custom properties written by app.js (see G there).
+   Colours and type come from settings.json. Everything scales from --h, so
+   the clock keeps its exact proportions at any window size or DPI.
+   ========================================================================== */
+
+:root {
+  /* Geometry fallbacks — app.js overwrites these before first paint. */
+  --h: 200px;
+  --digit-w: 132px;
+  --gap: 52px;
+  --radius: 20px;
+  --font: 184px;
+  --flip-ms: 250ms;
+  --flip-ease: cubic-bezier(0.42, 0, 0.58, 1);
+
+  /* Appearance — overwritten from settings. */
+  --bg: #0a0a0a;
+  --card-top-a: #26262a;
+  --card-top-b: #1c1c20;
+  --card-bot-a: #17171b;
+  --card-bot-b: #111114;
+  --glyph: #f6f6f8;
+  --glyph-shadow: rgba(0, 0, 0, 0.55);
+  --seam-dark: rgba(0, 0, 0, 0.95);
+  --seam-light: rgba(255, 255, 255, 0.06);
+  --font-stack: "Inter", "SF Pro Display", "Helvetica Neue", "Segoe UI",
+    Roboto, Arial, sans-serif;
+  --glyph-weight: 800;
+  --glyph-spacing: -0.015em;
+
+  --panel-bg: rgba(14, 14, 16, 0.94);
+  --panel-line: rgba(255, 255, 255, 0.08);
+  --muted: rgba(255, 255, 255, 0.42);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  font-family: var(--font-stack);
+  color: var(--glyph);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+  transition: background-color 300ms ease;
+}
+
+code,
+kbd {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+/* --------------------------------------------------------------------------
+   Stage + clock
+   -------------------------------------------------------------------------- */
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--h, 200px) * 0.055);
+  transition: opacity 320ms ease, filter 320ms ease;
+}
+
+html.panel-open .stage {
+  opacity: 0.22;
+  filter: blur(1.5px);
+}
+
+.clock {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+}
+
+.meridiem {
+  font-size: calc(var(--h, 200px) * 0.11);
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.meridiem[hidden] {
+  display: none;
+}
+
+.panel {
+  display: flex;
+  flex: 0 0 auto;
+  width: calc(var(--digit-w) * 2);
+  height: var(--h);
+  border-radius: var(--radius);
+  /* Fills any sub-pixel hairline between the two digit cells with the exact
+     same vertical shading the faces use, so the seam stays perfectly clean. */
+  background: linear-gradient(
+    180deg,
+    var(--card-top-a) 0%,
+    var(--card-top-b) 49.95%,
+    var(--card-bot-a) 50.05%,
+    var(--card-bot-b) 100%
+  );
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035);
+  transition: background 300ms ease, box-shadow 300ms ease;
+}
+
+.panel.is-hidden {
+  display: none;
+}
+
+.flip-digit {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--digit-w);
+  height: var(--h);
+  perspective: calc(var(--h) * 2.4);
+}
+
+/* --------------------------------------------------------------------------
+   Card faces. Every digit owns four faces:
+     .top.static / .bottom.static   sourced text, always present
+     .top.flap   / .bottom.flap     the two halves that travel
+   The flap folds AWAY from the viewer (so it recedes into the seam instead of
+   spilling outside the card), which is what a real flip clock does.
+   -------------------------------------------------------------------------- */
+
+.face {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  overflow: hidden;
+  z-index: 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+  transition: background 300ms ease, box-shadow 300ms ease;
+}
+
+.face span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 200%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-stack);
+  font-size: var(--font);
+  font-weight: var(--glyph-weight);
+  line-height: 1;
+  letter-spacing: var(--glyph-spacing);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--glyph);
+  text-shadow: 0 0.02em 0.06em var(--glyph-shadow);
+  transition: color 300ms ease;
+}
+
+/* Upper face shows the upper half of the glyph; lower face the lower half. */
+.face.top span {
+  top: 0;
+}
+
+.face.bottom span {
+  top: -100%;
+}
+
+.face.top {
+  top: 0;
+  background: linear-gradient(180deg, var(--card-top-a), var(--card-top-b));
+  /* The seam: a hard dark cut along this face's bottom edge. */
+  box-shadow: inset 0 -2px 0 var(--seam-dark);
+}
+
+.face.bottom {
+  bottom: 0;
+  background: linear-gradient(180deg, var(--card-bot-a), var(--card-bot-b));
+  /* The 1px highlight of the far side of the hinge. */
+  box-shadow: inset 0 2px 0 var(--seam-light);
+}
+
+/* Only the outer corners of a panel are rounded, so the pair reads as one
+   continuous card rather than two separate tiles. */
+.panel .flip-digit.l .face.top {
+  border-top-left-radius: var(--radius);
+}
+
+.panel .flip-digit.l .face.bottom {
+  border-bottom-left-radius: var(--radius);
+}
+
+.panel .flip-digit.r .face.top {
+  border-top-right-radius: var(--radius);
+}
+
+.panel .flip-digit.r .face.bottom {
+  border-bottom-right-radius: var(--radius);
+}
+
+/* --------------------------------------------------------------------------
+   The moving halves
+   -------------------------------------------------------------------------- */
+
+.face.flap {
+  display: none;
+  z-index: 2;
+}
+
+.face.flap.bottom {
+  z-index: 3;
+}
+
+.face.flap.top {
+  transform-origin: 50% 100%;
+  transform: rotateX(0deg);
+}
+
+.face.flap.bottom {
+  transform-origin: 50% 0%;
+  /* Parked edge-on and receded, so it is invisible during the first half. */
+  transform: rotateX(-90deg);
+}
+
+/* Flat shading: the paper dims as it turns away from the light and brightens
+   as it comes back into it. */
+.face.flap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: #000;
+}
+
+.flip-digit.animating .face.flap {
+  display: block;
+}
+
+.flip-digit.animating .face.flap.top {
+  animation: flip-fold var(--flip-ms) var(--flip-ease) forwards;
+}
+
+.flip-digit.animating .face.flap.bottom {
+  animation: flip-unfold var(--flip-ms) var(--flip-ease) var(--flip-ms) forwards;
+}
+
+.flip-digit.animating .face.flap.top::after {
+  animation: shade-in var(--flip-ms) linear forwards;
+}
+
+.flip-digit.animating .face.flap.bottom::after {
+  animation: shade-out var(--flip-ms) linear var(--flip-ms) forwards;
+}
+
+@keyframes flip-fold {
+  from {
+    transform: rotateX(0deg);
+  }
+  to {
+    transform: rotateX(90deg);
+  }
+}
+
+@keyframes flip-unfold {
+  from {
+    transform: rotateX(-90deg);
+  }
+  to {
+    transform: rotateX(0deg);
+  }
+}
+
+@keyframes shade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.55;
+  }
+}
+
+@keyframes shade-out {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion — cross-fade instead of a 3D fold.
+   "on" forces it, "off" restores it even when the OS asks for less motion.
+   -------------------------------------------------------------------------- */
+
+html[data-reduced-motion="on"] .flip-digit {
+  perspective: none;
+}
+
+html[data-reduced-motion="on"] .flip-digit.animating .face.flap.bottom {
+  animation-name: fade-in;
+  animation-delay: var(--flip-ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-reduced-motion="auto"] .flip-digit {
+    perspective: none;
+  }
+
+  html[data-reduced-motion="auto"] .flip-digit.animating .face.flap.bottom {
+    animation-name: fade-in;
+    animation-delay: var(--flip-ms);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Update toast
+   -------------------------------------------------------------------------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 12px);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92vw, 460px);
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel-bg);
+  backdrop-filter: blur(14px);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12.5px;
+  letter-spacing: -0.005em;
+  box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  transition: opacity 320ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.toast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+.toast__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+}
+
+.toast__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast__action {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #0a0a0a;
+  font: inherit;
+  font-weight: 600;
+  font-size: 11.5px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.toast__action[hidden] {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Settings panel
+   -------------------------------------------------------------------------- */
+
+.settings {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: min(400px, 100vw);
+  height: 100vh;
+  border-left: 1px solid var(--panel-line);
+  background: var(--panel-bg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: -30px 0 80px -30px rgba(0, 0, 0, 0.95);
+  transform: translateX(100%);
+  transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.settings[hidden] {
+  display: none;
+}
+
+.settings.is-open {
+  transform: translateX(0);
+}
+
+.settings__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--panel-line);
+}
+
+.settings__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.settings__sub {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.settings__sub code {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.settings__body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 18px 26px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+.settings__section {
+  padding: 18px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings__section h3 {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 6px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.65);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease,
+    transform 180ms ease;
+}
+
+.preset:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.preset.is-active {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.preset i {
+  display: block;
+  width: 100%;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.field--wide {
+  grid-column: 1 / -1;
+}
+
+.field > span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.field input[type="color"] {
+  width: 100%;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.field input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+
+.field input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 5px;
+}
+
+.field input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.13);
+  outline: none;
+  cursor: pointer;
+}
+
+.field input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.field input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.field select {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.field select option {
+  background: #16161a;
+  color: #fff;
+}
+
+.segmented {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 12px;
+}
+
+.segmented button {
+  flex: 1;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.segmented button:hover {
+  color: #fff;
+}
+
+.segmented button.is-active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle i {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  transition: background 200ms ease;
+}
+
+.toggle i::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.toggle input:checked + i {
+  background: #34d399;
+}
+
+.toggle input:checked + i::after {
+  transform: translateX(14px);
+}
+
+.settings__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-top: 18px;
+}
+
+.btn-quiet {
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.75);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.btn-quiet:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.settings__hint {
+  margin: 18px 0 0;
+  font-size: 11px;
+  line-height: 1.9;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.settings__hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  margin: 0 1px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.8);
+}

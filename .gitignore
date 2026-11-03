@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+*.log
+
+# local render/test screenshots
+smoke*.png
+
+# editor + OS noise
+.DS_Store
+Thumbs.db

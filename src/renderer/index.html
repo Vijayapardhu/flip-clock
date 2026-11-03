@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';"
+    />
+    <title>FlipClock</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="stage">
+      <main class="clock" id="clock" role="timer" aria-label="Clock"></main>
+      <div class="meridiem" id="meridiem" hidden>PM</div>
+    </div>
+
+    <div class="toast" id="updateToast" hidden role="status">
+      <span class="toast__dot" aria-hidden="true"></span>
+      <span class="toast__text" id="updateToastText">Checking for updates…</span>
+      <button class="toast__action" id="updateToastAction" hidden>Restart now</button>
+    </div>
+
+    <aside class="settings" id="settingsPanel" hidden aria-hidden="true" aria-label="Settings">
+      <header class="settings__head">
+        <div>
+          <p class="settings__title">Settings</p>
+          <p class="settings__sub">Live · saved to <code>settings.json</code></p>
+        </div>
+        <button class="icon-btn" id="settingsClose" aria-label="Close settings">✕</button>
+      </header>
+
+      <div class="settings__body">
+        <section class="settings__section">
+          <h3>Presets</h3>
+          <div class="presets" id="presetGrid">
+            <button class="preset" data-preset="classic"><i data-swatch="classic"></i>Classic</button>
+            <button class="preset" data-preset="midnight"><i data-swatch="midnight"></i>Midnight</button>
+            <button class="preset" data-preset="ember"><i data-swatch="ember"></i>Ember</button>
+            <button class="preset" data-preset="blueprint"><i data-swatch="blueprint"></i>Blueprint</button>
+            <button class="preset" data-preset="mono"><i data-swatch="mono"></i>Mono</button>
+            <button class="preset" data-preset="sand"><i data-swatch="sand"></i>Sand</button>
+          </div>
+        </section>
+
+        <section class="settings__section">
+          <h3>Colours</h3>
+          <div class="fields">
+            <label class="field"><span>Background</span><input type="color" data-path="appearance.background" /></label>
+            <label class="field"><span>Card top · start</span><input type="color" data-path="appearance.cardTopStart" /></label>
+            <label class="field"><span>Card top · end</span><input type="color" data-path="appearance.cardTopEnd" /></label>
+            <label class="field"><span>Card bottom · start</span><input type="color" data-path="appearance.cardBottomStart" /></label>
+            <label class="field"><span>Card bottom · end</span><input type="color" data-path="appearance.cardBottomEnd" /></label>
+            <label class="field"><span>Numbers</span><input type="color" data-path="appearance.glyph" /></label>
+            <label class="field"><span>Seam · dark</span><input type="color" data-path="appearance.seamDark" /></label>
+            <label class="field"><span>Seam · light</span><input type="color" data-path="appearance.seamLight" /></label>
+          </div>
+        </section>
+
+        <section class="settings__section">
+          <h3>Type &amp; shape</h3>
+          <label class="field field--wide">
+            <span>Font</span>
+            <select data-path="appearance.fontFamily">
+              <option value="inter">Inter</option>
+              <option value="sf">SF Pro Display</option>
+              <option value="helvetica">Helvetica Neue</option>
+              <option value="system">System UI</option>
+              <option value="mono">Monospace</option>
+              <option value="serif">Serif</option>
+            </select>
+          </label>
+          <label class="field field--wide">
+            <span>Weight</span>
+            <select data-path="appearance.fontWeight">
+              <option value="400">400 · Regular</option>
+              <option value="500">500 · Medium</option>
+              <option value="600">600 · Semibold</option>
+              <option value="700">700 · Bold</option>
+              <option value="800">800 · Extra bold</option>
+              <option value="900">900 · Black</option>
+            </select>
+          </label>
+          <label class="field"><span>Letter spacing</span><input type="range" min="-0.06" max="0.12" step="0.005" data-path="appearance.letterSpacing" /></label>
+          <label class="field"><span>Number size</span><input type="range" min="0.6" max="1.15" step="0.01" data-path="appearance.fontScale" /></label>
+          <label class="field"><span>Digit width</span><input type="range" min="0.45" max="1" step="0.01" data-path="appearance.digitWidth" /></label>
+          <label class="field"><span>Corner radius</span><input type="range" min="0" max="0.3" step="0.01" data-path="appearance.radius" /></label>
+          <label class="field"><span>Panel gap</span><input type="range" min="0" max="0.6" step="0.01" data-path="appearance.panelGap" /></label>
+          <label class="field"><span>Screen margin</span><input type="range" min="0" max="0.25" step="0.01" data-path="appearance.margin" /></label>
+        </section>
+
+        <section class="settings__section">
+          <h3>Motion</h3>
+          <label class="field"><span>Flip duration</span><input type="range" min="80" max="800" step="10" data-path="motion.flipMs" /></label>
+          <label class="field field--wide">
+            <span>Easing</span>
+            <select data-path="motion.easing">
+              <option value="standard">Standard</option>
+              <option value="sharp">Sharp</option>
+              <option value="gentle">Gentle</option>
+              <option value="spring">Spring</option>
+            </select>
+          </label>
+          <label class="field field--wide">
+            <span>Reduced motion</span>
+            <select data-path="motion.reducedMotion">
+              <option value="auto">Respect system setting</option>
+              <option value="on">Always reduce</option>
+              <option value="off">Never reduce</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="settings__section">
+          <h3>Time</h3>
+          <div class="segmented" data-segment="time.format">
+            <button data-value="24">24-hour</button>
+            <button data-value="12">12-hour</button>
+          </div>
+          <label class="toggle"><span>Show seconds</span><input type="checkbox" data-path="time.showSeconds" /><i></i></label>
+          <label class="toggle"><span>Show AM / PM</span><input type="checkbox" data-path="time.showAmPm" /><i></i></label>
+        </section>
+
+        <section class="settings__section">
+          <h3>Behaviour</h3>
+          <label class="toggle"><span>Always on top</span><input type="checkbox" data-path="behavior.alwaysOnTop" /><i></i></label>
+          <label class="toggle"><span>Keep screen awake</span><input type="checkbox" data-path="behavior.keepAwake" /><i></i></label>
+          <label class="toggle"><span>Start fullscreen</span><input type="checkbox" data-path="behavior.startFullscreen" /><i></i></label>
+          <label class="toggle"><span>Check for updates</span><input type="checkbox" data-path="behavior.autoUpdate" /><i></i></label>
+        </section>
+
+        <div class="settings__actions">
+          <button class="btn-quiet" id="settingsReset">Reset to defaults</button>
+          <button class="btn-quiet" id="settingsOpenFile">Open settings file</button>
+        </div>
+
+        <p class="settings__hint">
+          Shortcuts — <kbd>S</kbd> or <kbd>,</kbd> settings · <kbd>F11</kbd> fullscreen ·
+          <kbd>T</kbd> always-on-top · <kbd>U</kbd> install update ·
+          <kbd>Esc</kbd> / <kbd>Q</kbd> quit
+        </p>
+      </div>
+    </aside>
+
+    <script src="app.js"></script>
+  </body>
+</html>
