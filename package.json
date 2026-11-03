@@ -33,8 +33,7 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win",
     "dist:setup": "electron-builder --win nsis",
-    "dist:portable": "electron-builder --win portable",
-    "release": "electron-builder --win --publish always"
+    "dist:portable": "electron-builder --win portable"
   },
   "devDependencies": {
     "electron": "^45.2.1",
@@ -85,10 +84,6 @@
     "portable": {
       "artifactName": "FlipClock-${version}-portable.${ext}",
       "unpackDirName": "FlipClock"
-    },
-    "publish": {
-      "provider": "github",
-      "releaseType": "release"
     }
   }
 }

@@ -63,10 +63,8 @@ jobs:
       - name: Generate application icon
         run: npm run icon:app
 
-      - name: Build and publish to GitHub Releases
-        run: npx electron-builder --win --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Windows app
+        run: npx electron-builder --win --publish never
 
       - name: Generate release notes from commit history
         shell: pwsh
@@ -88,20 +86,39 @@ jobs:
           ### Install
           | File | Notes |
           | --- | --- |
-          | \`FlipClock-Setup-$($tag.TrimStart('v')).exe\` | Installer with Start menu + desktop shortcuts. |
-          | \`FlipClock-$($tag.TrimStart('v'))-portable.exe\` | Runs from anywhere, no install. |
+          | FlipClock-Setup-$($tag.TrimStart('v')).exe | Installer with Start menu + desktop shortcuts. |
+          | FlipClock-$($tag.TrimStart('v'))-portable.exe | Runs from anywhere, no install. |
 
           > Builds are unsigned. SmartScreen may ask you to confirm —
           > choose **More info → Run anyway**, or build from source.
           "@
           Set-Content -Path release_notes.md -Value $body -Encoding utf8
 
-      - name: Attach release notes
+      - name: Create or update GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
-        run: gh release edit $env:TAG --notes-file release_notes.md
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:TAG
+          $assets = @(
+            Get-ChildItem dist -File |
+              Where-Object { $_.Extension -eq '.exe' -or $_.Name -like '*.blockmap' -or $_.Name -eq 'latest.yml' } |
+              ForEach-Object { $_.FullName }
+          )
+          gh release view $tag 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Updating existing release $tag"
+            gh release edit $tag --notes-file release_notes.md --latest
+            if ($LASTEXITCODE -ne 0) { throw "Could not update release $tag" }
+            gh release upload $tag @assets --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Could not upload release assets" }
+          } else {
+            Write-Host "Creating release $tag"
+            gh release create $tag @assets --title "Flip Clock $($tag.TrimStart('v'))" --notes-file release_notes.md --latest
+            if ($LASTEXITCODE -ne 0) { throw "Could not create release $tag" }
+          }
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
