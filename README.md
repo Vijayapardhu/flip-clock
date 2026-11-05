@@ -92,13 +92,13 @@ The details matter too: 12/24-hour format, optional seconds, a generated flip so
 
 <table>
   <tr>
-    <td align="center" valign="top" width="70%">
-      <img src="docs/settings.png" alt="Flip Clock settings sheet with themes, custom colours, clock size, time format and preferences" width="600" />
+    <td align="center" valign="top">
+      <img src="docs/settings.png" alt="Flip Clock settings sheet with themes, custom colours, clock size, time format and preferences" width="500" />
       <br />
       <sub>One quiet sheet for palettes, size, format and preferences.</sub>
     </td>
-    <td align="center" valign="top" width="30%">
-      <img src="docs/mobile-warm.png" alt="Flip Clock on a phone: three stacked cards in the warm Amber light palette" width="240" />
+    <td align="center" valign="top">
+      <img src="docs/mobile-warm.png" alt="Flip Clock on a phone: three stacked cards in the warm Amber light palette" width="280" />
       <br />
       <sub>Three stacked cards on a phone.</sub>
     </td>

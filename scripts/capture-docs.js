@@ -18,7 +18,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let shotIndex = 0;
 
-async function capture({ name, width, height, shell = false, setup }) {
+async function capture({ name, width, height, shell = false, setup, crop }) {
   shotIndex += 1;
   const win = new BrowserWindow({
     width,
@@ -47,8 +47,9 @@ async function capture({ name, width, height, shell = false, setup }) {
   await wait(500);
 
   const image = await win.webContents.capturePage();
+  const output = crop ? image.crop(crop) : image;
   fs.mkdirSync(OUT, { recursive: true });
-  fs.writeFileSync(path.join(OUT, name), image.toPNG());
+  fs.writeFileSync(path.join(OUT, name), output.toPNG());
   process.stdout.write(`wrote docs/${name}\n`);
   win.destroy();
 }
@@ -79,6 +80,7 @@ app.whenReady().then(async () => {
       height: 900,
       shell: true,
       setup: `document.getElementById('menuToggle').click();`,
+      crop: { x: 400, y: 100, width: 640, height: 800 },
     });
 
     // Theme variety — a calm dark palette and a bright light palette.
