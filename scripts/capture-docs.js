@@ -18,6 +18,29 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let shotIndex = 0;
 
+async function settleClock(win) {
+  await win.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const start = performance.now();
+      let seen = false;
+      const poll = setInterval(() => {
+        const flipping = document.querySelector('.top-flip, .bottom-flip');
+        if (flipping) seen = true;
+        if (seen && !flipping) {
+          clearInterval(poll);
+          resolve(true);
+          return;
+        }
+        if (performance.now() - start > 2500) {
+          clearInterval(poll);
+          resolve(false);
+        }
+      }, 25);
+    })
+  `);
+  await wait(80);
+}
+
 async function capture({ name, width, height, shell = false, setup, crop }) {
   shotIndex += 1;
   const win = new BrowserWindow({
@@ -44,7 +67,7 @@ async function capture({ name, width, height, shell = false, setup, crop }) {
     await win.webContents.executeJavaScript(setup);
     await wait(800);
   }
-  await wait(500);
+  await settleClock(win);
 
   const image = await win.webContents.capturePage();
   const output = crop ? image.crop(crop) : image;
@@ -63,11 +86,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('shell:is-maximized', () => false);
   try {
     // Hero — the frameless desktop shell, default palette.
-    await capture({ name: 'desktop-dark.png', width: 1600, height: 900, shell: true });
+    await capture({ name: 'desktop-shell.png', width: 1600, height: 900, shell: true });
 
     // Phone portrait — warm light palette, three cards.
     await capture({
-      name: 'mobile-warm.png',
+      name: 'mobile-amber.png',
       width: 427,
       height: 952,
       setup: `FlipThemes.setMode('light'); FlipThemes.setTheme('theme4');`,
@@ -75,7 +98,7 @@ app.whenReady().then(async () => {
 
     // Redesigned settings sheet.
     await capture({
-      name: 'settings.png',
+      name: 'settings-sheet.png',
       width: 1440,
       height: 900,
       shell: true,
@@ -85,13 +108,13 @@ app.whenReady().then(async () => {
 
     // Theme variety — a calm dark palette and a bright light palette.
     await capture({
-      name: 'theme-iris.png',
+      name: 'iris-dark.png',
       width: 1440,
       height: 810,
       setup: `FlipThemes.setMode('dark'); FlipThemes.setTheme('theme2');`,
     });
     await capture({
-      name: 'theme-rose.png',
+      name: 'rose-light.png',
       width: 1440,
       height: 810,
       setup: `FlipThemes.setMode('light'); FlipThemes.setTheme('theme10');`,

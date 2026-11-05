@@ -24,7 +24,7 @@ On the web, offline, and as a frameless Windows app.</p>
 </p>
 
 <a href="https://vijayaapardhu.dev/flip-clock/">
-  <img src="docs/desktop-dark.png" alt="Flip Clock desktop app with three large flip cards, a custom titlebar and the date in the corner" />
+  <img src="docs/desktop-shell.png" alt="Flip Clock desktop app with three large flip cards, a custom titlebar and the date in the corner" />
 </a>
 
 <sub>The desktop shell at 1600 × 900. Click the image to open the live clock.</sub>
@@ -93,12 +93,12 @@ The details matter too: 12/24-hour format, optional seconds, a generated flip so
 <table>
   <tr>
     <td align="center" valign="top">
-      <img src="docs/settings.png" alt="Flip Clock settings sheet with themes, custom colours, clock size, time format and preferences" width="500" />
+      <img src="docs/settings-sheet.png" alt="Flip Clock settings sheet with themes, custom colours, clock size, time format and preferences" width="500" />
       <br />
       <sub>One quiet sheet for palettes, size, format and preferences.</sub>
     </td>
     <td align="center" valign="top">
-      <img src="docs/mobile-warm.png" alt="Flip Clock on a phone: three stacked cards in the warm Amber light palette" width="280" />
+      <img src="docs/mobile-amber.png" alt="Flip Clock on a phone: three stacked cards in the warm Amber light palette" width="280" />
       <br />
       <sub>Three stacked cards on a phone.</sub>
     </td>
@@ -112,12 +112,12 @@ No mockups or static recreations — every image here is a capture of the real a
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/theme-iris.png" alt="Flip Clock in the Iris dark palette" width="420" />
+      <img src="docs/iris-dark.png" alt="Flip Clock in the Iris dark palette" width="420" />
       <br />
       <sub><b>Iris</b> · dark</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/theme-rose.png" alt="Flip Clock in the Rose light palette" width="420" />
+      <img src="docs/rose-light.png" alt="Flip Clock in the Rose light palette" width="420" />
       <br />
       <sub><b>Rose</b> · light</sub>
     </td>
